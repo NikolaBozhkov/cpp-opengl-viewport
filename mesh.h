@@ -1,7 +1,7 @@
 #pragma once
 
-#include <vector>
 #include "glm/glm.hpp"
+#include <vector>
 
 struct Vertex
 {
@@ -18,7 +18,7 @@ struct Triangle
     Vertex* vC;
 
     Triangle(Vertex* vA, Vertex* vB, Vertex* vC)
-    : vA(vA), vB(vB), vC(vC)
+        : vA(vA), vB(vB), vC(vC)
     {
     }
 
@@ -51,6 +51,10 @@ public:
     std::vector<int> indices;
 
     Mesh(const char* path);
+    Mesh(Mesh&& other)
+        : vertices(std::move(other.vertices)), indices(std::move(other.indices))
+    {
+    }
 
-    TriangleStatistics CalculateStatistics();
+    void CalculateStatistics(TriangleStatistics& stats, bool& didCalculate);
 };

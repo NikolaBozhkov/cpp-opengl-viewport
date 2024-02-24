@@ -7,20 +7,19 @@
 #include <GL/gl.h>
 #endif
 
-#include <fstream>
-#include <iostream>
-#include <tuple>
 #include <filesystem>
+#include <iostream>
+#include <memory>
+#include <thread>
 
-#include "rapidjson/document.h"
-#include "rapidjson/filereadstream.h"
 #include "glm/glm.hpp"
 #include "glm/gtc/matrix_transform.hpp"
 #include "imgui/imgui.h"
-#include "imgui/imgui_impl_sdl2.h"
 #include "imgui/imgui_impl_opengl3.h"
-
+#include "imgui/imgui_impl_sdl2.h"
 #include "mesh.h"
+#include "rapidjson/document.h"
+#include "rapidjson/filereadstream.h"
 #include "shader.h"
 
 void GenerateBuffers(uint& vao, uint& vbo, uint& ibo)
@@ -34,7 +33,7 @@ void GenerateBuffers(uint& vao, uint& vbo, uint& ibo)
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), nullptr);
     glEnableVertexAttribArray(0);
 
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, normal));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
     glEnableVertexAttribArray(1);
 
     glGenBuffers(1, &ibo);
@@ -59,11 +58,8 @@ void PopulateBuffers(std::vector<Vertex>& vertices, const std::vector<int>& indi
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 }
 
-int main(int argc, char *argv[])
+int main(int argc, char* argv[])
 {
-    const char* meshFileName = "teapot";
-    Mesh mesh("task_input/teapot.json");
-
     SDL_Init(SDL_INIT_VIDEO);
 
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
@@ -73,10 +69,12 @@ int main(int argc, char *argv[])
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);
 
     const int width = 1280, height = 720;
-    SDL_Window *window = SDL_CreateWindow(
+    SDL_Window* window = SDL_CreateWindow(
         "OpenGL", 100, 100, width, height, SDL_WINDOW_OPENGL);
 
     SDL_GLContext context = SDL_GL_CreateContext(window);
+    SDL_GLContext loaderContext = SDL_GL_CreateContext(window);
+
     SDL_GL_SetSwapInterval(1);
     glViewport(0, 0, 1280, 720);
 
@@ -103,7 +101,23 @@ int main(int argc, char *argv[])
 
     uint vao, vbo, ibo;
     GenerateBuffers(vao, vbo, ibo);
-    PopulateBuffers(mesh.vertices, mesh.indices, vao, vbo, ibo);
+
+    const char* meshFileName = "teapot";
+    std::unique_ptr<Mesh> mesh;
+    bool isLoadingMesh = false;
+    bool didLoadMesh = false;
+
+    auto loadMesh = [&](std::unique_ptr<Mesh>& m, std::string path)
+    {
+        Mesh* loadedMesh = new Mesh(path.c_str());
+        m = std::make_unique<Mesh>(std::move(*loadedMesh));
+        SDL_GL_MakeCurrent(window, loaderContext);
+        PopulateBuffers(m->vertices, m->indices, vao, vbo, ibo);
+        SDL_GL_MakeCurrent(window, context);
+        didLoadMesh = true;
+    };
+
+    std::thread(loadMesh, std::ref(mesh), "task_input/teapot.json").detach();
 
     Shader shader("shader.vert", "shader.frag");
 
@@ -114,7 +128,8 @@ int main(int argc, char *argv[])
     bool isOpenMeshPicker = false;
     std::vector<std::filesystem::path> meshFilePaths;
     TriangleStatistics meshStatistics;
-    bool didCalculateStatsForCurrentMesh = false;
+    bool didCalculateStats = false;
+    bool isCalculatingStats = false;
 
     while (true)
     {
@@ -139,22 +154,25 @@ int main(int argc, char *argv[])
         glClearColor(0.03f, 0.03f, 0.03f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        glUseProgram(shader.id);
-        glBindVertexArray(vao);
+        if (didLoadMesh)
+        {
+            glUseProgram(shader.id);
+            glBindVertexArray(vao);
 
-        rotation += deltaTime * M_PI * 5;
-        model = glm::rotate(glm::mat4(1.0f), glm::radians(rotation), glm::vec3(1.0f, 1.0f, 0.0f)) * baseModel;
+            rotation += deltaTime * M_PI * 5;
+            model = glm::rotate(glm::mat4(1.0f), glm::radians(rotation), glm::vec3(1.0f, 1.0f, 0.0f)) * baseModel;
 
-        shader.SetUniform("model", model);
-        shader.SetUniform("view", view);
-        shader.SetUniform("projection", proj);
-        glm::vec3 lightPos(5.0f, -10.0f, -1.0f);
-        shader.SetUniform("lightPos", lightPos);
+            shader.SetUniform("model", model);
+            shader.SetUniform("view", view);
+            shader.SetUniform("projection", proj);
+            glm::vec3 lightPos(5.0f, -10.0f, -1.0f);
+            shader.SetUniform("lightPos", lightPos);
 
-        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-        glDrawElements(GL_TRIANGLES, mesh.indices.size(), GL_UNSIGNED_INT, nullptr);
+            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+            glDrawElements(GL_TRIANGLES, mesh->indices.size(), GL_UNSIGNED_INT, nullptr);
 
-        glBindVertexArray(0);
+            glBindVertexArray(0);
+        }
 
         ImGui::Begin("Demo");
         if (ImGui::Button("Choose Mesh"))
@@ -172,6 +190,17 @@ int main(int argc, char *argv[])
 
         ImGui::SameLine();
         ImGui::TextUnformatted(meshFileName);
+
+        // Mesh loading indicator
+        if (isLoadingMesh)
+        {
+            ImGui::SameLine();
+            ImGui::Text(" %c", "|/-\\"[(int)(ImGui::GetTime() / 0.05f) & 3]);
+        }
+
+        if (didLoadMesh)
+            isLoadingMesh = false;
+
         if (ImGui::BeginPopup("mesh_selection"))
         {
             ImGui::SeparatorText("Task Input Meshes");
@@ -181,12 +210,13 @@ int main(int argc, char *argv[])
                 if (ImGui::Selectable(path.filename().c_str(), false))
                 {
                     // Load new mesh
-                    mesh = Mesh(path.c_str());
-                    PopulateBuffers(mesh.vertices, mesh.indices, vao, vbo, ibo);
+                    didLoadMesh = false;
+                    isLoadingMesh = true;
+                    std::thread(loadMesh, std::ref(mesh), path.string()).detach();
 
                     // Update state
                     isOpenMeshPicker = false;
-                    didCalculateStatsForCurrentMesh = false;
+                    didCalculateStats = false;
                     meshFileName = path.stem().c_str();
                 }
             }
@@ -194,16 +224,28 @@ int main(int argc, char *argv[])
             ImGui::EndPopup();
         }
 
-        if (ImGui::Button("Calculate Statistics"))
+        if (ImGui::Button("Calculate Statistics") && !didCalculateStats && !isCalculatingStats)
         {
-            meshStatistics = mesh.CalculateStatistics();
-            didCalculateStatsForCurrentMesh = true;
+            isCalculatingStats = true;
+            mesh->CalculateStatistics(meshStatistics, didCalculateStats);
         }
 
-        if (didCalculateStatsForCurrentMesh)
+        // Calculation loading indicator
+        if (isCalculatingStats)
+        {
+            ImGui::SameLine();
+            ImGui::Text("%c", "|/-\\"[(int)(ImGui::GetTime() / 0.05f) & 3]);
+        }
+
+        if (didCalculateStats)
+        {
+            isCalculatingStats = false;
             ImGui::Text("Triangle Area Statistics:\nMax: %f\nMin: %f\nAvg: %f", meshStatistics.maxArea, meshStatistics.minArea, meshStatistics.avgArea);
+        }
         else
+        {
             ImGui::Text("Triangle Area Statistics:\nMax: -\nMin: -\nAvg: -");
+        }
 
         ImGui::End();
 

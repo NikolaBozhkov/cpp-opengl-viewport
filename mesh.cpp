@@ -1,7 +1,8 @@
-#include <iostream>
-#include <thread>
+#include <chrono>
 #include <future>
+#include <iostream>
 #include <numeric>
+#include <thread>
 
 #include "rapidjson/document.h"
 #include "rapidjson/filereadstream.h"
@@ -49,7 +50,8 @@ Mesh::Mesh(const char* path)
     }
 
     const rapidjson::Value& vertexObject = doc["geometry_object"];
-    if (!vertexObject.IsObject() || !vertexObject.HasMember("vertices") || !vertexObject.HasMember("triangles")) {
+    if (!vertexObject.IsObject() || !vertexObject.HasMember("vertices") || !vertexObject.HasMember("triangles"))
+    {
         std::cerr << "Invalid vertex object format" << std::endl;
         exit(1);
     }
@@ -57,7 +59,8 @@ Mesh::Mesh(const char* path)
     const rapidjson::Value& verticesArray = vertexObject["vertices"];
     const rapidjson::Value& trianglesArray = vertexObject["triangles"];
 
-    if (!verticesArray.IsArray() || !trianglesArray.IsArray()) {
+    if (!verticesArray.IsArray() || !trianglesArray.IsArray())
+    {
         std::cerr << "Invalid vertices or triangles array format" << std::endl;
         exit(1);
     }
@@ -102,7 +105,7 @@ Mesh::Mesh(const char* path)
     }
 }
 
-TriangleStatistics Mesh::CalculateStatistics()
+void Mesh::CalculateStatistics(TriangleStatistics& stats, bool& didCalculate)
 {
     // Calculate triangle statistics using all available threads
     int triangleCount = indices.size() / 3;
@@ -140,17 +143,23 @@ TriangleStatistics Mesh::CalculateStatistics()
         start += batchSize;
     }
 
-    // Accumulate statistics from all threads
-    TriangleStatistics stats = std::accumulate(
-        std::begin(triangleStatsFutures), std::end(triangleStatsFutures), TriangleStatistics(),
-        [](TriangleStatistics result, auto& current)
+    std::thread(
+        [](std::vector<std::future<TriangleStatistics>> statsFutures, TriangleStatistics& stats, bool& didCalculate)
         {
-            const TriangleStatistics currentStats = current.get();
-            result.avgArea += currentStats.avgArea;
-            result.minArea = result.minArea > currentStats.minArea ? currentStats.minArea : result.minArea;
-            result.maxArea = result.maxArea < currentStats.maxArea ? currentStats.maxArea : result.maxArea;
-            return result;
-        });
-
-    return stats;
+            // Accumulate statistics from all threads
+            stats = std::accumulate(
+                std::begin(statsFutures), std::end(statsFutures), TriangleStatistics(),
+                [](TriangleStatistics result, auto& current)
+                {
+                    const TriangleStatistics currentStats = current.get();
+                    result.avgArea += currentStats.avgArea;
+                    result.minArea = result.minArea > currentStats.minArea ? currentStats.minArea : result.minArea;
+                    result.maxArea = result.maxArea < currentStats.maxArea ? currentStats.maxArea : result.maxArea;
+                    return result;
+                });
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+            didCalculate = true;
+        },
+        std::move(triangleStatsFutures), std::ref(stats), std::ref(didCalculate))
+        .detach();
 }
