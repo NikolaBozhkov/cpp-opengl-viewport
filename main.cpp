@@ -82,7 +82,7 @@ struct TriangleStatistics
 
 int LoadMesh(const char* path, std::vector<Vertex>& vertices, std::vector<int>& indices)
 {
-    FILE *file = fopen(path, "rb");
+    FILE* file = fopen(path, "rb");
     if (!file)
     {
         std::cerr << "Failed to open file" << std::endl;
@@ -111,22 +111,22 @@ int LoadMesh(const char* path, std::vector<Vertex>& vertices, std::vector<int>& 
     }
 
     const rapidjson::Value& vertexObject = doc["geometry_object"];
-    // if (!vertexObject.IsObject() || !vertexObject.HasMember("vertices") || !vertexObject.HasMember("triangles")) {
-    //     std::cerr << "Invalid vertex object format" << std::endl;
-    //     return 1;
-    // }
+    if (!vertexObject.IsObject() || !vertexObject.HasMember("vertices") || !vertexObject.HasMember("triangles")) {
+        std::cerr << "Invalid vertex object format" << std::endl;
+        return 1;
+    }
 
     const rapidjson::Value& verticesArray = vertexObject["vertices"];
     const rapidjson::Value& trianglesArray = vertexObject["triangles"];
 
-    // if (!verticesArray.IsArray() || !trianglesArray.IsArray()) {
-    //     std::cerr << "Invalid vertices or triangles array format" << std::endl;
-    //     return 1;
-    // }
+    if (!verticesArray.IsArray() || !trianglesArray.IsArray()) {
+        std::cerr << "Invalid vertices or triangles array format" << std::endl;
+        return 1;
+    }
 
+    vertices.reserve(verticesArray.Size() / 3);
     for (rapidjson::SizeType i = 0; i <= verticesArray.Size() - 3; i += 3)
     {
-
         if (!verticesArray[i].IsNumber())
         {
             std::cerr << "Invalid vertex format" << std::endl;
@@ -137,9 +137,10 @@ int LoadMesh(const char* path, std::vector<Vertex>& vertices, std::vector<int>& 
         float y = verticesArray[i + 1].GetFloat();
         float z = verticesArray[i + 2].GetFloat();
 
-        vertices.push_back(Vertex(glm::vec3(x, y, z), glm::vec3(0.0f)));
+        vertices.emplace_back(glm::vec3(x, y, z), glm::vec3(0.0f));
     }
 
+    vertices.reserve(trianglesArray.Size());
     for (rapidjson::SizeType i = 0; i < trianglesArray.Size(); i++)
     {
         if (!trianglesArray[i].IsInt())
@@ -148,7 +149,7 @@ int LoadMesh(const char* path, std::vector<Vertex>& vertices, std::vector<int>& 
             return 1;
         }
 
-        indices.push_back(trianglesArray[i].GetInt());
+        indices.emplace_back(trianglesArray[i].GetInt());
     }
 
     // Calculate smooth vertex normals (non-normalized)
@@ -165,7 +166,7 @@ int LoadMesh(const char* path, std::vector<Vertex>& vertices, std::vector<int>& 
     return 0;
 }
 
-void CalculateMeshStatistics(std::vector<Vertex>& vertices, std::vector<int>& indices)
+TriangleStatistics CalculateMeshStatistics(std::vector<Vertex>& vertices, std::vector<int>& indices)
 {
     // Calculate triangle statistics using all available threads
     int triangleCount = indices.size() / 3;
@@ -215,8 +216,7 @@ void CalculateMeshStatistics(std::vector<Vertex>& vertices, std::vector<int>& in
             return result;
         });
 
-    std::cout << "Triangle Area Statistics --" << std::endl
-              << "Min: " << stats.minArea << " Max: " << stats.maxArea << " Avg: " << stats.avgArea << std::endl;
+    return stats;
 }
 
 void CreateBuffers(std::vector<Vertex>& vertices, const std::vector<int>& indices, uint& vao, uint& vbo, uint& ibo)
@@ -248,10 +248,10 @@ int main(int argc, char *argv[])
 {
     std::vector<Vertex> vertices;
     std::vector<int> indices;
+
+    const char* meshFileName = "teapot";
     if (LoadMesh("task_input/teapot.json", vertices, indices) == 1)
         return 1;
-
-    CalculateMeshStatistics(vertices, indices);
 
     SDL_Init(SDL_INIT_VIDEO);
 
@@ -379,6 +379,8 @@ int main(int argc, char *argv[])
 
     bool isOpenMeshPicker = false;
     std::vector<std::filesystem::path> meshFilePaths;
+    TriangleStatistics meshStatistics;
+    bool didCalculateStatsForCurrentMesh = false;
 
     while (true)
     {
@@ -429,6 +431,7 @@ int main(int argc, char *argv[])
         ImGui::Begin("Demo");
         if (ImGui::Button("Choose Mesh"))
         {
+            ImGui::OpenPopup("mesh_selection");
             isOpenMeshPicker = true;
             meshFilePaths.clear();
             std::string path = "./task_input";
@@ -439,9 +442,11 @@ int main(int argc, char *argv[])
             }
         }
 
-        if (isOpenMeshPicker)
+        ImGui::SameLine();
+        ImGui::TextUnformatted(meshFileName);
+        if (ImGui::BeginPopup("mesh_selection"))
         {
-            ImGui::BeginChild("Mesh Picker", ImVec2(200, 200), true);
+            ImGui::SeparatorText("Task Input Meshes");
             for (int i = 0; i < meshFilePaths.size(); i++)
             {
                 const auto path = meshFilePaths[i];
@@ -451,16 +456,29 @@ int main(int argc, char *argv[])
                     indices.clear();
                     LoadMesh(path.c_str(), vertices, indices);
                     CreateBuffers(vertices, indices, vao, vbo, ibo);
-                    std::cout << path.filename() << std::endl;
-                    CalculateMeshStatistics(vertices, indices);
                     isOpenMeshPicker = false;
+                    didCalculateStatsForCurrentMesh = false;
+                    meshFileName = path.stem().c_str();
                 }
             }
 
-            ImGui::EndChild();
+            ImGui::EndPopup();
         }
 
+        if (ImGui::Button("Calculate Statistics"))
+        {
+            meshStatistics = CalculateMeshStatistics(vertices, indices);
+            didCalculateStatsForCurrentMesh = true;
+        }
+
+        if (didCalculateStatsForCurrentMesh)
+            ImGui::Text("Triangle Area Statistics:\nMax: %f\nMin: %f\nAvg: %f", meshStatistics.maxArea, meshStatistics.minArea, meshStatistics.avgArea);
+        else
+            ImGui::Text("Triangle Area Statistics:\nMax: -\nMin: -\nAvg: -");
+
         ImGui::End();
+
+        ImGui::ShowDemoWindow();
 
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
