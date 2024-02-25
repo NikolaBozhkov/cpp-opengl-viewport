@@ -57,4 +57,5 @@ public:
     }
 
     void CalculateStatistics(TriangleStatistics& stats, bool& didCalculate);
+    bool IsPointInside(glm::vec3 p);
 };

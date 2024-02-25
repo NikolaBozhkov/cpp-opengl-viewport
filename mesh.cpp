@@ -1,4 +1,3 @@
-#include <chrono>
 #include <future>
 #include <iostream>
 #include <numeric>
@@ -157,9 +156,63 @@ void Mesh::CalculateStatistics(TriangleStatistics& stats, bool& didCalculate)
                     result.maxArea = result.maxArea < currentStats.maxArea ? currentStats.maxArea : result.maxArea;
                     return result;
                 });
-            std::this_thread::sleep_for(std::chrono::seconds(2));
             didCalculate = true;
         },
         std::move(triangleStatsFutures), std::ref(stats), std::ref(didCalculate))
         .detach();
+}
+
+// Möller–Trumbore intersection (yoinked from Wikipedia)
+bool DoesRayIntersectTriangle(glm::vec3 ray_origin, glm::vec3 ray_vector, const Triangle& triangle, glm::vec3& out_intersection_point)
+{
+    constexpr float epsilon = std::numeric_limits<float>::epsilon();
+
+    glm::vec3 edge1 = triangle.vB->position - triangle.vA->position;
+    glm::vec3 edge2 = triangle.vC->position - triangle.vA->position;
+    glm::vec3 ray_cross_e2 = cross(ray_vector, edge2);
+    float det = dot(edge1, ray_cross_e2);
+
+    if (det > -epsilon && det < epsilon)
+        return false;    // This ray is parallel to this triangle.
+
+    float inv_det = 1.0 / det;
+    glm::vec3 s = ray_origin - triangle.vA->position;
+    float u = inv_det * dot(s, ray_cross_e2);
+
+    if (u < 0 || u > 1)
+        return false;
+
+    glm::vec3 s_cross_e1 = cross(s, edge1);
+    float v = inv_det * dot(ray_vector, s_cross_e1);
+
+    if (v < 0 || u + v > 1)
+        return false;
+
+    // At this stage we can compute t to find out where the intersection point is on the line.
+    float t = inv_det * dot(edge2, s_cross_e1);
+
+    if (t > epsilon) // ray intersection
+    {
+        out_intersection_point = ray_origin + ray_vector * t;
+        return true;
+    }
+    else // This means that there is a line intersection but not a ray intersection.
+        return false;
+}
+
+bool Mesh::IsPointInside(const glm::vec3 p)
+{
+    const glm::vec3 rayOrigin = p;
+    const glm::vec3 rayDirection = glm::vec3(1.0f, 1.0f, 0.0f);
+    int intersectionCount = 0;
+    glm::vec3 intersectionPoint;
+
+    for (int i = 0; i < indices.size(); i += 3)
+    {
+        const Triangle triangle = Triangle::GetTriangle(vertices, indices, i);
+        if (DoesRayIntersectTriangle(rayOrigin, rayDirection, triangle, intersectionPoint))
+            intersectionCount++;
+    }
+
+    return intersectionCount % 2 == 1;
 }

@@ -17,9 +17,10 @@
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_opengl3.h"
 #include "imgui/imgui_impl_sdl2.h"
-#include "mesh.h"
 #include "rapidjson/document.h"
 #include "rapidjson/filereadstream.h"
+
+#include "mesh.h"
 #include "shader.h"
 
 void GenerateBuffers(uint& vao, uint& vbo, uint& ibo)
@@ -130,6 +131,8 @@ int main(int argc, char* argv[])
     TriangleStatistics meshStatistics;
     bool didCalculateStats = false;
     bool isCalculatingStats = false;
+    bool isPointInside = false;
+    bool didCalculatePoint = false;
 
     while (true)
     {
@@ -217,6 +220,7 @@ int main(int argc, char* argv[])
                     // Update state
                     isOpenMeshPicker = false;
                     didCalculateStats = false;
+                    didCalculatePoint = false;
                     meshFileName = path.stem().c_str();
                 }
             }
@@ -244,8 +248,22 @@ int main(int argc, char* argv[])
         }
         else
         {
-            ImGui::Text("Triangle Area Statistics:\nMax: -\nMin: -\nAvg: -");
+            ImGui::TextUnformatted("Triangle Area Statistics:\nMax: -\nMin: -\nAvg: -");
         }
+
+        static float point[3] = { 0.10f, 0.20f, 0.30f };
+
+        if (ImGui::Button("Test Point"))
+        {
+            isPointInside = mesh->IsPointInside(glm::vec3(point[0], point[1], point[2]));
+            didCalculatePoint = true;
+        }
+
+        ImGui::SameLine();
+
+        const std::string pointResIndicator = std::string("Is point inside the mesh: ") + (didCalculatePoint ? (isPointInside ? "Yes" : "No") : "-");
+        ImGui::TextUnformatted(pointResIndicator.c_str());
+        ImGui::InputFloat3("", point);
 
         ImGui::End();
 
