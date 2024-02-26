@@ -29,8 +29,8 @@ struct Triangle
 
     glm::vec3 GetNormal() const
     {
-        const glm::vec3 e1 = vA->position - vB->position;
-        const glm::vec3 e2 = vC->position - vB->position;
+        const glm::vec3 e1 = vB->position - vA->position;
+        const glm::vec3 e2 = vC->position - vA->position;
         return glm::cross(e1, e2);
     }
 };
@@ -58,4 +58,8 @@ public:
 
     void CalculateStatistics(TriangleStatistics& stats, bool& didCalculate);
     bool IsPointInside(glm::vec3 p);
+    void Subdivide();
+
+private:
+    void CalculateNormals();
 };

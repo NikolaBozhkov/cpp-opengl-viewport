@@ -2,6 +2,7 @@
 #include <iostream>
 #include <numeric>
 #include <thread>
+#include <map>
 
 #include "rapidjson/document.h"
 #include "rapidjson/filereadstream.h"
@@ -92,6 +93,11 @@ Mesh::Mesh(const char* path)
         indices.emplace_back(trianglesArray[i].GetInt());
     }
 
+    CalculateNormals();
+}
+
+void Mesh::CalculateNormals()
+{
     // Calculate smooth vertex normals (non-normalized)
     for (int i = 0; i < indices.size(); i += 3)
     {
@@ -162,8 +168,96 @@ void Mesh::CalculateStatistics(TriangleStatistics& stats, bool& didCalculate)
         .detach();
 }
 
+size_t HashCombine(size_t v1, size_t v2)
+{
+    size_t m = std::max(v1, v2);
+    return m * (m + 1) + std::min(v1, v2);
+}
+
+void Mesh::Subdivide()
+{
+    // At least twice more
+    vertices.reserve(vertices.size() * 2);
+
+    // For each triangle make 4 new
+    std::vector<int> newIndices;
+    newIndices.reserve(indices.size() * 4);
+
+    std::unordered_map<size_t, int> availableNewVertexIdxs;
+    for (int i = 0; i < indices.size(); i += 3)
+    {
+        const Triangle triangle = Triangle::GetTriangle(vertices, indices, i);
+
+        // Get midpoints
+        glm::vec3 midpointAC = triangle.vA->position + 0.5f * (triangle.vC->position - triangle.vA->position);
+        glm::vec3 midpointAB = triangle.vA->position + 0.5f * (triangle.vB->position - triangle.vA->position);
+        glm::vec3 midpointBC = triangle.vB->position + 0.5f * (triangle.vC->position - triangle.vB->position);
+
+        // Reset normals
+        triangle.vA->normal = glm::vec3(0);
+        triangle.vB->normal = glm::vec3(0);
+        triangle.vC->normal = glm::vec3(0);
+
+        // Hash edges and add new vertices for each unique edge at the midpoint
+        size_t edgeHashAC = HashCombine(indices[i], indices[i + 2]);
+        size_t edgeHashAB = HashCombine(indices[i], indices[i + 1]);
+        size_t edgeHashBC = HashCombine(indices[i + 1], indices[i + 2]);
+
+        int midpointACIdx;
+        int midpointABIdx;
+        int midpointBCIdx;
+        if (!availableNewVertexIdxs.count(edgeHashAC))
+        {
+            midpointACIdx = vertices.size();
+            availableNewVertexIdxs.insert({edgeHashAC, midpointACIdx});
+            vertices.emplace_back(Vertex(midpointAC, glm::vec3(0)));
+        }
+        else
+            midpointACIdx = availableNewVertexIdxs.at(edgeHashAC);
+
+        if (!availableNewVertexIdxs.count(edgeHashAB))
+        {
+            midpointABIdx = vertices.size();
+            availableNewVertexIdxs.insert({edgeHashAB, midpointABIdx});
+            vertices.emplace_back(Vertex(midpointAB, glm::vec3(0)));
+        }
+        else
+            midpointABIdx = availableNewVertexIdxs.at(edgeHashAB);
+
+        if (!availableNewVertexIdxs.count(edgeHashBC))
+        {
+            midpointBCIdx = vertices.size();
+            availableNewVertexIdxs.insert({edgeHashBC, midpointBCIdx});
+            vertices.emplace_back(Vertex(midpointBC, glm::vec3(0)));
+        }
+        else
+            midpointBCIdx = availableNewVertexIdxs.at(edgeHashBC);
+
+        // Counter-clockwise order
+        newIndices.push_back(indices[i]);
+        newIndices.push_back(midpointABIdx);
+        newIndices.push_back(midpointACIdx);
+
+        newIndices.push_back(midpointACIdx);
+        newIndices.push_back(midpointABIdx);
+        newIndices.push_back(midpointBCIdx);
+
+        newIndices.push_back(midpointACIdx);
+        newIndices.push_back(midpointBCIdx);
+        newIndices.push_back(indices[i + 2]);
+
+        newIndices.push_back(midpointABIdx);
+        newIndices.push_back(indices[i + 1]);
+        newIndices.push_back(midpointBCIdx);
+    }
+
+    indices = std::move(newIndices);
+
+    CalculateNormals();
+}
+
 // Möller–Trumbore intersection (yoinked from Wikipedia)
-bool DoesRayIntersectTriangle(glm::vec3 ray_origin, glm::vec3 ray_vector, const Triangle& triangle, glm::vec3& out_intersection_point)
+bool DoesRayIntersectTriangle(glm::vec3 ray_origin, glm::vec3 ray_vector, const Triangle& triangle)
 {
     constexpr float epsilon = std::numeric_limits<float>::epsilon();
 
@@ -193,7 +287,6 @@ bool DoesRayIntersectTriangle(glm::vec3 ray_origin, glm::vec3 ray_vector, const 
 
     if (t > epsilon) // ray intersection
     {
-        out_intersection_point = ray_origin + ray_vector * t;
         return true;
     }
     else // This means that there is a line intersection but not a ray intersection.
@@ -205,12 +298,11 @@ bool Mesh::IsPointInside(const glm::vec3 p)
     const glm::vec3 rayOrigin = p;
     const glm::vec3 rayDirection = glm::vec3(1.0f, 1.0f, 0.0f);
     int intersectionCount = 0;
-    glm::vec3 intersectionPoint;
 
     for (int i = 0; i < indices.size(); i += 3)
     {
         const Triangle triangle = Triangle::GetTriangle(vertices, indices, i);
-        if (DoesRayIntersectTriangle(rayOrigin, rayDirection, triangle, intersectionPoint))
+        if (DoesRayIntersectTriangle(rayOrigin, rayDirection, triangle))
             intersectionCount++;
     }
 

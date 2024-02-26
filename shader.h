@@ -16,7 +16,7 @@ class Shader
 public:
     unsigned int id;
 
-    Shader(const char* vertexPath, const char* fragmentPath);
+    Shader(const char* vertexPath, const char* fragmentPath, const char* geometryPath = nullptr);
 
     template<typename T>
     void SetUniform(const char* name, T& value)

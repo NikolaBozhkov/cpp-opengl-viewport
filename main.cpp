@@ -80,6 +80,8 @@ int main(int argc, char* argv[])
     glViewport(0, 0, 1280, 720);
 
     glEnable(GL_DEPTH_TEST);
+    // glEnable(GL_CULL_FACE);
+    // glCullFace(GL_BACK);
 
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
@@ -95,8 +97,7 @@ int main(int argc, char* argv[])
     glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
     glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
 
-    glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
-    glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width / (float)height, 0.1f, 100.0f);
+    glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width / (float)height, 0.1f, 1000.0f);
     glm::mat4 model = glm::mat4(1.0f);
     glm::mat4 baseModel = glm::rotate(model, -float(M_PI) / 2, glm::vec3(1.0f, 0.0f, 0.0f)) * glm::scale(model, glm::vec3(0.4f));
 
@@ -120,7 +121,9 @@ int main(int argc, char* argv[])
 
     std::thread(loadMesh, std::ref(mesh), "task_input/teapot.json").detach();
 
-    Shader shader("shader.vert", "shader.frag");
+    Shader solidShader("shaders/shader.vert", "shaders/shader.frag");
+    Shader wireframeShader("shaders/shader.vert", "shaders/wireframe.frag");
+    Shader normalsShader("shaders/normal.vert", "shaders/normal.frag", "shaders/normal.geom");
 
     SDL_Event windowEvent;
     Uint32 prevTicks = SDL_GetTicks();
@@ -133,6 +136,8 @@ int main(int argc, char* argv[])
     bool isCalculatingStats = false;
     bool isPointInside = false;
     bool didCalculatePoint = false;
+    bool isWireframeRendering = false;
+    bool isNormalRendering = false;
 
     while (true)
     {
@@ -147,6 +152,8 @@ int main(int argc, char* argv[])
                 break;
             if (windowEvent.type == SDL_KEYUP && windowEvent.key.keysym.sym == SDLK_ESCAPE)
                 break;
+            if(windowEvent.type == SDL_MOUSEWHEEL)
+                cameraPos.z += windowEvent.wheel.y * deltaTime * 10;
         }
 
         // Start the Dear ImGui frame
@@ -159,25 +166,38 @@ int main(int argc, char* argv[])
 
         if (didLoadMesh)
         {
-            glUseProgram(shader.id);
+            Shader& currentShader = isWireframeRendering ? wireframeShader : solidShader;
+            glUseProgram(currentShader.id);
             glBindVertexArray(vao);
 
             rotation += deltaTime * M_PI * 5;
             model = glm::rotate(glm::mat4(1.0f), glm::radians(rotation), glm::vec3(1.0f, 1.0f, 0.0f)) * baseModel;
+            glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
 
-            shader.SetUniform("model", model);
-            shader.SetUniform("view", view);
-            shader.SetUniform("projection", proj);
-            glm::vec3 lightPos(5.0f, -10.0f, -1.0f);
-            shader.SetUniform("lightPos", lightPos);
+            currentShader.SetUniform("model", model);
+            currentShader.SetUniform("view", view);
+            currentShader.SetUniform("projection", proj);
+            glm::vec3 lightPos(500.0f, 500.0f, 500.0f);
+            currentShader.SetUniform("lightPos", lightPos);
 
-            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+            glPolygonMode(GL_FRONT_AND_BACK, isWireframeRendering ? GL_LINE : GL_FILL);
             glDrawElements(GL_TRIANGLES, mesh->indices.size(), GL_UNSIGNED_INT, nullptr);
+
+            if (isNormalRendering)
+            {
+                glUseProgram(normalsShader.id);
+
+                normalsShader.SetUniform("model", model);
+                normalsShader.SetUniform("view", view);
+                normalsShader.SetUniform("projection", proj);
+                glDrawElements(GL_TRIANGLES, mesh->indices.size(), GL_UNSIGNED_INT, nullptr);
+            }
 
             glBindVertexArray(0);
         }
 
         ImGui::Begin("Demo");
+
         if (ImGui::Button("Choose Mesh"))
         {
             ImGui::OpenPopup("mesh_selection");
@@ -199,10 +219,16 @@ int main(int argc, char* argv[])
         {
             ImGui::SameLine();
             ImGui::Text(" %c", "|/-\\"[(int)(ImGui::GetTime() / 0.05f) & 3]);
+
+            if (didLoadMesh)
+                isLoadingMesh = false;
         }
 
-        if (didLoadMesh)
-            isLoadingMesh = false;
+        if (ImGui::Button(isWireframeRendering ? "Smooth shading" : "Wireframe"))
+            isWireframeRendering = !isWireframeRendering;
+
+        if (ImGui::Button(isNormalRendering ? "Hide Normals" : "Show Normals"))
+            isNormalRendering = !isNormalRendering;
 
         if (ImGui::BeginPopup("mesh_selection"))
         {
@@ -251,9 +277,15 @@ int main(int argc, char* argv[])
             ImGui::TextUnformatted("Triangle Area Statistics:\nMax: -\nMin: -\nAvg: -");
         }
 
+        if (ImGui::Button("Subdivide"))
+        {
+            mesh->Subdivide();
+            PopulateBuffers(mesh->vertices, mesh->indices, vao, vbo, ibo);
+        }
+
         static float point[3] = { 0.10f, 0.20f, 0.30f };
 
-        if (ImGui::Button("Test Point"))
+        if (ImGui::Button("Test Point Local"))
         {
             isPointInside = mesh->IsPointInside(glm::vec3(point[0], point[1], point[2]));
             didCalculatePoint = true;
@@ -277,8 +309,11 @@ int main(int argc, char* argv[])
         prevTicks = currentTicks;
     }
 
-    glDeleteProgram(shader.id);
+    glDeleteProgram(wireframeShader.id);
+    glDeleteProgram(solidShader.id);
+    glDeleteProgram(normalsShader.id);
     SDL_GL_DeleteContext(context);
+    SDL_GL_DeleteContext(loaderContext);
     SDL_DestroyWindow(window);
     SDL_Quit();
     return 0;
