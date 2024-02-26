@@ -1,4 +1,6 @@
 #!/bin/bash
 
 make project
-./run
+if [[ $? -eq 0 ]]; then
+    ./run
+fi

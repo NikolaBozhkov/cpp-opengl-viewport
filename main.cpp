@@ -139,6 +139,8 @@ int main(int argc, char* argv[])
     bool isWireframeRendering = false;
     bool isNormalRendering = false;
 
+    bool isCameraMoveOn = false;
+
     while (true)
     {
         Uint32 currentTicks = SDL_GetTicks();
@@ -152,8 +154,17 @@ int main(int argc, char* argv[])
                 break;
             if (windowEvent.type == SDL_KEYUP && windowEvent.key.keysym.sym == SDLK_ESCAPE)
                 break;
-            if(windowEvent.type == SDL_MOUSEWHEEL)
+            if (windowEvent.type == SDL_MOUSEWHEEL)
                 cameraPos.z += windowEvent.wheel.y * deltaTime * 10;
+            if (windowEvent.type == SDL_MOUSEBUTTONDOWN)
+                isCameraMoveOn = true;
+            else if (windowEvent.type == SDL_MOUSEBUTTONUP)
+                isCameraMoveOn = false;
+            if (isCameraMoveOn && windowEvent.type == SDL_MOUSEMOTION)
+            {
+                cameraPos.x -= windowEvent.motion.xrel * deltaTime * 0.2f;
+                cameraPos.y += windowEvent.motion.yrel * deltaTime * 0.2f;
+            }
         }
 
         // Start the Dear ImGui frame
@@ -223,6 +234,9 @@ int main(int argc, char* argv[])
             if (didLoadMesh)
                 isLoadingMesh = false;
         }
+
+        if (ImGui::Button("Reset Camera"))
+            cameraPos = glm::vec3(0.0f, 0.0f, 3.0f);
 
         if (ImGui::Button(isWireframeRendering ? "Smooth shading" : "Wireframe"))
             isWireframeRendering = !isWireframeRendering;
@@ -298,8 +312,6 @@ int main(int argc, char* argv[])
         ImGui::InputFloat3("", point);
 
         ImGui::End();
-
-        ImGui::ShowDemoWindow();
 
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
