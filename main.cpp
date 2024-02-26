@@ -69,15 +69,15 @@ int main(int argc, char* argv[])
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);
 
-    const int width = 1280, height = 720;
+    int width = 1280, height = 720;
     SDL_Window* window = SDL_CreateWindow(
-        "OpenGL", 100, 100, width, height, SDL_WINDOW_OPENGL);
+        "OpenGL", 100, 100, width, height, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
 
     SDL_GLContext context = SDL_GL_CreateContext(window);
     SDL_GLContext loaderContext = SDL_GL_CreateContext(window);
 
     SDL_GL_SetSwapInterval(1);
-    glViewport(0, 0, 1280, 720);
+    glViewport(0, 0, width, height);
 
     glEnable(GL_DEPTH_TEST);
     // glEnable(GL_CULL_FACE);
@@ -165,6 +165,14 @@ int main(int argc, char* argv[])
                 cameraPos.x -= windowEvent.motion.xrel * deltaTime * 0.2f;
                 cameraPos.y += windowEvent.motion.yrel * deltaTime * 0.2f;
             }
+            if (windowEvent.window.event == SDL_WINDOWEVENT_RESIZED)
+            {
+                width = windowEvent.window.data1;
+                height = windowEvent.window.data2;
+                proj = glm::perspective(glm::radians(45.0f), (float)width / (float)height, 0.1f, 1000.0f);
+                glViewport(0, 0, width, height);
+            }
+
         }
 
         // Start the Dear ImGui frame
@@ -210,6 +218,7 @@ int main(int argc, char* argv[])
         ImGui::GetStyle().Colors[ImGuiCol_Text] = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
         ImGui::Begin("Demo");
 
+        // Mesh selection
         if (ImGui::Button("Choose Mesh"))
         {
             ImGui::OpenPopup("mesh_selection");
@@ -225,25 +234,6 @@ int main(int argc, char* argv[])
 
         ImGui::SameLine();
         ImGui::TextUnformatted(meshFileName);
-
-        // Mesh loading indicator
-        if (isLoadingMesh)
-        {
-            ImGui::SameLine();
-            ImGui::Text(" %c", "|/-\\"[(int)(ImGui::GetTime() / 0.05f) & 3]);
-
-            if (didLoadMesh)
-                isLoadingMesh = false;
-        }
-
-        if (ImGui::Button("Reset Camera"))
-            cameraPos = glm::vec3(0.0f, 0.0f, 3.0f);
-
-        if (ImGui::Button(isWireframeRendering ? "Smooth shading" : "Wireframe"))
-            isWireframeRendering = !isWireframeRendering;
-
-        if (ImGui::Button(isNormalRendering ? "Hide Normals" : "Show Normals"))
-            isNormalRendering = !isNormalRendering;
 
         if (ImGui::BeginPopup("mesh_selection"))
         {
@@ -269,6 +259,27 @@ int main(int argc, char* argv[])
             ImGui::EndPopup();
         }
 
+        // Mesh loading indicator
+        if (isLoadingMesh)
+        {
+            ImGui::SameLine();
+            ImGui::Text(" %c", "|/-\\"[(int)(ImGui::GetTime() / 0.05f) & 3]);
+
+            if (didLoadMesh)
+                isLoadingMesh = false;
+        }
+
+        // Utility
+        if (ImGui::Button("Reset Camera"))
+            cameraPos = glm::vec3(0.0f, 0.0f, 3.0f);
+
+        if (ImGui::Button(isWireframeRendering ? "Smooth shading" : "Wireframe"))
+            isWireframeRendering = !isWireframeRendering;
+
+        if (ImGui::Button(isNormalRendering ? "Hide Normals" : "Show Normals"))
+            isNormalRendering = !isNormalRendering;
+
+        // Triangle statistics
         if (ImGui::Button("Calculate Statistics") && !didCalculateStats && !isCalculatingStats)
         {
             isCalculatingStats = true;
@@ -292,14 +303,15 @@ int main(int argc, char* argv[])
             ImGui::TextUnformatted("Triangle Area Statistics:\nMax: -\nMin: -\nAvg: -");
         }
 
+        // Subdivision
         if (ImGui::Button("Subdivide"))
         {
             mesh->Subdivide();
             PopulateBuffers(mesh->vertices, mesh->indices, vao, vbo, ibo);
         }
 
+        // Point test
         static float point[3] = { 0.10f, 0.20f, 0.30f };
-
         if (ImGui::Button("Test Point Local"))
         {
             isPointInside = mesh->IsPointInside(glm::vec3(point[0], point[1], point[2]));
@@ -314,6 +326,7 @@ int main(int argc, char* argv[])
 
         ImGui::End();
 
+        // Stats
         ImGui::SetNextWindowPos(ImVec2(width - 240, 40));
         ImGui::SetNextWindowSize(ImVec2(200, 100));
         ImGuiWindowFlags flags = 0;
