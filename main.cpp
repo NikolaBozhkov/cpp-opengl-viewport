@@ -160,7 +160,7 @@ int main(int argc, char* argv[])
                 isCameraMoveOn = true;
             else if (windowEvent.type == SDL_MOUSEBUTTONUP)
                 isCameraMoveOn = false;
-            if (isCameraMoveOn && windowEvent.type == SDL_MOUSEMOTION)
+            if (isCameraMoveOn && windowEvent.type == SDL_MOUSEMOTION && !ImGui::GetIO().WantCaptureMouse)
             {
                 cameraPos.x -= windowEvent.motion.xrel * deltaTime * 0.2f;
                 cameraPos.y += windowEvent.motion.yrel * deltaTime * 0.2f;
@@ -172,7 +172,7 @@ int main(int argc, char* argv[])
         ImGui_ImplSDL2_NewFrame();
         ImGui::NewFrame();
 
-        glClearColor(0.03f, 0.03f, 0.03f, 1.0f);
+        glClearColor(0.045f, 0.045f, 0.045f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         if (didLoadMesh)
@@ -207,6 +207,7 @@ int main(int argc, char* argv[])
             glBindVertexArray(0);
         }
 
+        ImGui::GetStyle().Colors[ImGuiCol_Text] = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
         ImGui::Begin("Demo");
 
         if (ImGui::Button("Choose Mesh"))
@@ -310,6 +311,32 @@ int main(int argc, char* argv[])
         const std::string pointResIndicator = std::string("Is point inside the mesh: ") + (didCalculatePoint ? (isPointInside ? "Yes" : "No") : "-");
         ImGui::TextUnformatted(pointResIndicator.c_str());
         ImGui::InputFloat3("", point);
+
+        ImGui::End();
+
+        ImGui::SetNextWindowPos(ImVec2(width - 240, 40));
+        ImGui::SetNextWindowSize(ImVec2(200, 100));
+        ImGuiWindowFlags flags = 0;
+        flags |= ImGuiWindowFlags_NoBackground;
+        flags |= ImGuiWindowFlags_NoMouseInputs;
+        flags |= ImGuiWindowFlags_NoTitleBar;
+        flags |= ImGuiWindowFlags_NoResize;
+        ImGui::Begin("Stats", nullptr, flags);
+
+        std::string vertexCountText = std::to_string(mesh->vertices.size()) + " vertices";
+        float vertexCountTextW = ImGui::CalcTextSize(vertexCountText.c_str()).x;
+        std::string triangleCountText = std::to_string(mesh->indices.size() / 3) + " triangles";
+        float triangleCountTextW = ImGui::CalcTextSize(triangleCountText.c_str()).x;
+        std::string indexCountText = std::to_string(mesh->indices.size()) + " indices";
+        float indexCountTextW = ImGui::CalcTextSize(indexCountText.c_str()).x;
+
+        ImGui::GetStyle().Colors[ImGuiCol_Text] = ImVec4(1.0f, 0.7f, 0.2f, 1.0f);
+        ImGui::SetCursorPosX(ImGui::GetWindowWidth() - vertexCountTextW - ImGui::GetStyle().ItemSpacing.x);
+        ImGui::TextUnformatted(vertexCountText.c_str());
+        ImGui::SetCursorPosX(ImGui::GetWindowWidth() - triangleCountTextW - ImGui::GetStyle().ItemSpacing.x);
+        ImGui::TextUnformatted(triangleCountText.c_str());
+        ImGui::SetCursorPosX(ImGui::GetWindowWidth() - indexCountTextW - ImGui::GetStyle().ItemSpacing.x);
+        ImGui::TextUnformatted(indexCountText.c_str());
 
         ImGui::End();
 
