@@ -61,6 +61,7 @@ void PopulateBuffers(std::vector<Vertex>& vertices, const std::vector<int>& indi
 
 int main(int argc, char* argv[])
 {
+    // Setup SDL with OpenGL
     SDL_Init(SDL_INIT_VIDEO);
 
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
@@ -93,6 +94,7 @@ int main(int argc, char* argv[])
     ImGui_ImplSDL2_InitForOpenGL(window, context);
     ImGui_ImplOpenGL3_Init();
 
+    // Camera settings
     glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 3.0f);
     glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
     glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
@@ -101,9 +103,11 @@ int main(int argc, char* argv[])
     glm::mat4 model = glm::mat4(1.0f);
     glm::mat4 baseModel = glm::rotate(model, -float(M_PI) / 2, glm::vec3(1.0f, 0.0f, 0.0f)) * glm::scale(model, glm::vec3(0.4f));
 
+    // Mesh buffer objects
     uint vao, vbo, ibo;
     GenerateBuffers(vao, vbo, ibo);
 
+    // Load default mesh
     const char* meshFileName = "teapot";
     std::unique_ptr<Mesh> mesh;
     bool isLoadingMesh = false;
@@ -119,23 +123,28 @@ int main(int argc, char* argv[])
         didLoadMesh = true;
     };
 
-    std::thread(loadMesh, std::ref(mesh), "task_input/teapot.json").detach();
+    std::thread(loadMesh, std::ref(mesh), "./task_input/teapot.json").detach();
 
-    Shader solidShader("shaders/shader.vert", "shaders/shader.frag");
-    Shader wireframeShader("shaders/shader.vert", "shaders/wireframe.frag");
-    Shader normalsShader("shaders/normal.vert", "shaders/normal.frag", "shaders/normal.geom");
+    // Load shaders
+    Shader solidShader("./shaders/shader.vert", "./shaders/shader.frag");
+    Shader wireframeShader("./shaders/shader.vert", "./shaders/wireframe.frag");
+    Shader normalsShader("./shaders/normal.vert", "./shaders/normal.frag", "./shaders/normal.geom");
 
     SDL_Event windowEvent;
     Uint32 prevTicks = SDL_GetTicks();
     float rotation = 0.0f;
 
+    // UI state
     bool isOpenMeshPicker = false;
     std::vector<std::filesystem::path> meshFilePaths;
+
     TriangleStatistics meshStatistics;
     bool didCalculateStats = false;
     bool isCalculatingStats = false;
+
     bool isPointInside = false;
     bool didCalculatePoint = false;
+
     bool isWireframeRendering = false;
     bool isNormalRendering = false;
 
@@ -146,6 +155,7 @@ int main(int argc, char* argv[])
         Uint32 currentTicks = SDL_GetTicks();
         float deltaTime = float(currentTicks - prevTicks) / 1000;
 
+        // Event handling
         ImGui_ImplSDL2_ProcessEvent(&windowEvent);
 
         if (SDL_PollEvent(&windowEvent))
@@ -172,7 +182,6 @@ int main(int argc, char* argv[])
                 proj = glm::perspective(glm::radians(45.0f), (float)width / (float)height, 0.1f, 1000.0f);
                 glViewport(0, 0, width, height);
             }
-
         }
 
         // Start the Dear ImGui frame
@@ -180,6 +189,7 @@ int main(int argc, char* argv[])
         ImGui_ImplSDL2_NewFrame();
         ImGui::NewFrame();
 
+        // Render scene
         glClearColor(0.045f, 0.045f, 0.045f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -215,6 +225,7 @@ int main(int argc, char* argv[])
             glBindVertexArray(0);
         }
 
+        // UI
         ImGui::GetStyle().Colors[ImGuiCol_Text] = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
         ImGui::Begin("Demo");
 
@@ -280,9 +291,10 @@ int main(int argc, char* argv[])
             isNormalRendering = !isNormalRendering;
 
         // Triangle statistics
-        if (ImGui::Button("Calculate Statistics") && !didCalculateStats && !isCalculatingStats)
+        if (ImGui::Button("Calculate Statistics") && !isCalculatingStats)
         {
             isCalculatingStats = true;
+            didCalculateStats = false;
             mesh->CalculateStatistics(meshStatistics, didCalculateStats);
         }
 
