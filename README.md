@@ -1,4 +1,4 @@
-## Mac-only build (Windows is another beast) ##
+## Mac-only build ##
 There is an executable included but otherwise run
 ```
 ./run.sh
@@ -12,6 +12,6 @@ There is an executable included but otherwise run
 
 #### Requires OpenGL 3.2
 
-## Controls (a bit clunky)
+## Controls
 - Click and drag to move the camera
 - Mouse wheel to zoom
